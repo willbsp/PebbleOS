@@ -26,8 +26,7 @@
 
 typedef struct {
   AppMenuDataSource data_source;
-  ButtonId button;
-  bool is_tap;
+  QuickLaunchAction action;
   int16_t selected;
   OptionMenu *option_menu;
 } QuickLaunchAppMenuData;
@@ -52,26 +51,24 @@ static bool prv_app_filter_callback(struct AppMenuDataSource *source, AppInstall
   }
   
   // For tap buttons, filter Timeline apps based on button
-  if (data->is_tap) {
-    if (data->button == BUTTON_ID_UP) {
-      // Tap Up: Only show Timeline Past, hide Timeline Future
-      if (uuid_equal(&entry->uuid, &timeline_uuid)) {
-        return false;
-      }
-    } else if (data->button == BUTTON_ID_DOWN) {
-      // Tap Down: Only show Timeline Future, hide Timeline Past
-      if (uuid_equal(&entry->uuid, &timeline_past_uuid)) {
-        return false;
-      }
-      // We also only want the Health app for Tap Up
+  if (data->action == QL_TAP_UP) {
+    // Tap Up: Only show Timeline Past, hide Timeline Future
+    if (uuid_equal(&entry->uuid, &timeline_uuid)) {
+      return false;
+    }
+  } else if (data->action == QL_TAP_DOWN) {
+    // Tap Down: Only show Timeline Future, hide Timeline Past
+    if (uuid_equal(&entry->uuid, &timeline_past_uuid)) {
+      return false;
+    }
+    // We also only want the Health app for Tap Up
+    if (uuid_equal(&entry->uuid, &health_uuid)) {
+      return false;
+    }
+  } else {
       if (uuid_equal(&entry->uuid, &health_uuid)) {
         return false;
       }
-    } else {
-        if (uuid_equal(&entry->uuid, &health_uuid)) {
-          return false;
-        }
-    }
   }
   
   return true;
@@ -97,27 +94,54 @@ static void prv_menu_draw_row(OptionMenu *option_menu, GContext* ctx, const Laye
   option_menu_system_draw_row(option_menu, ctx, cell_layer, text_frame, text, selected, context);
 }
 
+static void prv_quick_launch_set_app(QuickLaunchAction ql_action, AppInstallId app_id, bool enable) {
+  switch (ql_action) {
+    case QL_TAP_UP:
+      quick_launch_single_click_set_app(BUTTON_ID_UP, app_id);
+      quick_launch_single_click_set_enabled(BUTTON_ID_UP, enable);
+      break;
+    case QL_TAP_DOWN:
+      quick_launch_single_click_set_app(BUTTON_ID_DOWN, app_id);
+      quick_launch_single_click_set_enabled(BUTTON_ID_DOWN, enable);
+      break;
+    case QL_HOLD_UP:
+      quick_launch_set_app(BUTTON_ID_UP, app_id);
+      quick_launch_set_enabled(BUTTON_ID_UP, enable);
+      break;
+    case QL_HOLD_SELECT:
+      quick_launch_set_app(BUTTON_ID_SELECT, app_id);
+      quick_launch_set_enabled(BUTTON_ID_SELECT, enable);
+      break;
+    case QL_HOLD_DOWN:
+      quick_launch_set_app(BUTTON_ID_DOWN, app_id);
+      quick_launch_set_enabled(BUTTON_ID_DOWN, enable);
+      break;
+    case QL_HOLD_BACK:
+      quick_launch_set_app(BUTTON_ID_BACK, app_id);
+      quick_launch_set_enabled(BUTTON_ID_BACK, enable);
+      break;
+    case QL_COMBO_BACK_UP:
+      quick_launch_combo_back_up_set_app(app_id);
+      quick_launch_combo_back_up_set_enabled(enable);
+      break;
+    case QL_COMBO_UP_DOWN:
+      quick_launch_combo_up_down_set_app(app_id);
+      quick_launch_combo_up_down_set_enabled(enable);
+      break;
+  }
+}
+
 static void prv_menu_select(OptionMenu *option_menu, int selection, void *context) {
   window_set_click_config_provider(&option_menu->window, NULL);
 
   QuickLaunchAppMenuData *data = context;
   if (selection == 0) {
-    if (data->is_tap) {
-      quick_launch_single_click_set_app(data->button, INSTALL_ID_INVALID);
-      quick_launch_single_click_set_enabled(data->button, false);
-    } else {
-      quick_launch_set_app(data->button, INSTALL_ID_INVALID);
-      quick_launch_set_enabled(data->button, false);
-    }
+    prv_quick_launch_set_app(data->action, INSTALL_ID_INVALID, false);
     app_window_stack_pop(true);
   } else {
     AppMenuNode* app_menu_node =
         app_menu_data_source_get_node_at_index(&data->data_source, selection - NUM_CUSTOM_CELLS);
-    if (data->is_tap) {
-      quick_launch_single_click_set_app(data->button, app_menu_node->install_id);
-    } else {
-      quick_launch_set_app(data->button, app_menu_node->install_id);
-    }
+    prv_quick_launch_set_app(data->action, app_menu_node->install_id, true);
     app_window_stack_pop(true);
   }
 }
@@ -136,10 +160,9 @@ static void prv_menu_unload(OptionMenu *option_menu, void *context) {
   app_free(data);
 }
 
-void quick_launch_app_menu_window_push(ButtonId button, bool is_tap) {
+void quick_launch_app_menu_window_push(QuickLaunchAction ql_action) {
   QuickLaunchAppMenuData *data = app_zalloc_check(sizeof(*data));
-  data->button = button;
-  data->is_tap = is_tap;
+  data->action = ql_action;
 
   OptionMenu *option_menu = option_menu_create();
   data->option_menu = option_menu;
@@ -149,8 +172,35 @@ void quick_launch_app_menu_window_push(ButtonId button, bool is_tap) {
     .filter = prv_app_filter_callback,
   }, data);
 
-  const AppInstallId install_id = is_tap ? quick_launch_single_click_get_app(button)
-                                          : quick_launch_get_app(button);
+  AppInstallId install_id = INSTALL_ID_INVALID;
+
+  switch (ql_action) {
+    case QL_TAP_UP:
+      install_id = quick_launch_single_click_get_app(BUTTON_ID_UP);
+      break;
+    case QL_TAP_DOWN:
+      install_id = quick_launch_single_click_get_app(BUTTON_ID_DOWN);
+      break;
+    case QL_HOLD_UP:
+      install_id = quick_launch_get_app(BUTTON_ID_UP);
+      break;
+    case QL_HOLD_SELECT:
+      install_id = quick_launch_get_app(BUTTON_ID_SELECT);
+      break;
+    case QL_HOLD_DOWN:
+      install_id = quick_launch_get_app(BUTTON_ID_DOWN);
+      break;
+    case QL_HOLD_BACK:
+      install_id = quick_launch_get_app(BUTTON_ID_BACK);
+      break;
+    case QL_COMBO_BACK_UP:
+      install_id = quick_launch_combo_back_up_get_app();
+      break;
+    case QL_COMBO_UP_DOWN:
+      install_id = quick_launch_combo_up_down_get_app();
+      break;
+  }
+
   const int app_index = app_menu_data_source_get_index_of_app_with_install_id(&data->data_source,
                                                                               install_id);
 

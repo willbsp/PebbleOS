@@ -25,7 +25,7 @@
 #include "system/passert.h"
 #include "system/status_codes.h"
 
-#define NUM_ROWS (NUM_BUTTONS + 2)  // 4 hold buttons + 2 tap buttons (up and down)
+#define NUM_ROWS (NUM_BUTTONS + 2 + 2)  // 4 hold buttons + 2 tap buttons (up and down) + 2 combos
 
 typedef enum {
   ROW_TAP_UP = 0,
@@ -34,6 +34,8 @@ typedef enum {
   ROW_HOLD_SELECT,
   ROW_HOLD_DOWN,
   ROW_HOLD_BACK,
+  ROW_COMBO_BACK_UP,
+  ROW_COMBO_UP_DOWN,
 } QuickLaunchRow;
 
 typedef struct QuickLaunchData {
@@ -54,6 +56,10 @@ static const char *s_row_titles[NUM_ROWS] = {
   [ROW_HOLD_DOWN]    = i18n_noop("Hold Down"),
   /// Shown in Quick Launch Settings as the title of the hold back button quick launch option.
   [ROW_HOLD_BACK]    = i18n_noop("Hold Back"),
+  /// Shown in Quick Launch Settings as the title of the hold back and up combo quick launch option.
+  [ROW_COMBO_BACK_UP]    = i18n_noop("Hold Back+Up"),
+  /// Shown in Quick Launch Settings as the title of the hold up and down combo quick launch option.
+  [ROW_COMBO_UP_DOWN]    = i18n_noop("Hold Up+Down")
 };
 
 static void prv_get_subtitle_string(AppInstallId app_id, QuickLaunchData *data,
@@ -98,6 +104,12 @@ static void prv_update_app_names(QuickLaunchData *data) {
                           data->app_names[ROW_HOLD_DOWN], APP_NAME_SIZE_BYTES);
   prv_get_subtitle_string(quick_launch_get_app(BUTTON_ID_BACK), data,
                           data->app_names[ROW_HOLD_BACK], APP_NAME_SIZE_BYTES);
+
+  // Combos
+  prv_get_subtitle_string(quick_launch_combo_back_up_get_app(), data,
+                          data->app_names[ROW_COMBO_BACK_UP], APP_NAME_SIZE_BYTES);
+  prv_get_subtitle_string(quick_launch_combo_up_down_get_app(), data,
+                          data->app_names[ROW_COMBO_UP_DOWN], APP_NAME_SIZE_BYTES);
 }
 
 static void prv_draw_row_cb(SettingsCallbacks *context, GContext *ctx,
@@ -127,40 +139,39 @@ static uint16_t prv_get_initial_selection_cb(SettingsCallbacks *context) {
 
 static void prv_select_click_cb(SettingsCallbacks *context, uint16_t row) {
   PBL_ASSERTN(row < NUM_ROWS);
-  
-  ButtonId button;
-  bool is_tap;
-  
+
+  QuickLaunchAction action;
+
   switch (row) {
     case ROW_TAP_UP:
-      button = BUTTON_ID_UP;
-      is_tap = true;
+      action = QL_TAP_UP;
       break;
     case ROW_TAP_DOWN:
-      button = BUTTON_ID_DOWN;
-      is_tap = true;
+      action = QL_TAP_DOWN;
       break;
     case ROW_HOLD_UP:
-      button = BUTTON_ID_UP;
-      is_tap = false;
+      action = QL_HOLD_UP;
       break;
     case ROW_HOLD_SELECT:
-      button = BUTTON_ID_SELECT;
-      is_tap = false;
+      action = QL_HOLD_SELECT;
       break;
     case ROW_HOLD_DOWN:
-      button = BUTTON_ID_DOWN;
-      is_tap = false;
+      action = QL_HOLD_DOWN;
       break;
     case ROW_HOLD_BACK:
-      button = BUTTON_ID_BACK;
-      is_tap = false;
+      action = QL_HOLD_BACK;
+      break;
+    case ROW_COMBO_BACK_UP:
+      action = QL_COMBO_BACK_UP;
+      break;
+    case ROW_COMBO_UP_DOWN:
+      action = QL_COMBO_UP_DOWN;
       break;
     default:
       return;
   }
-  
-  quick_launch_app_menu_window_push(button, is_tap);
+
+  quick_launch_app_menu_window_push(action);
 }
 
 static uint16_t prv_num_rows_cb(SettingsCallbacks *context) {
